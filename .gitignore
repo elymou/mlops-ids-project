@@ -1,0 +1,16 @@
+cat > .gitignore << 'EOF'
+venv/
+env/
+.env
+__pycache__/
+*.pyc
+*.pyo
+data/raw/
+data/processed/
+models/
+mlruns/
+.ipynb_checkpoints/
+*.log
+*.so
+*.pkl
+EOF
