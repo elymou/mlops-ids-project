@@ -20,6 +20,30 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Create dummy model files for testing
+        run: |
+          python3 - <<'EOF'
+          import joblib
+          import numpy as np
+          from sklearn.ensemble import RandomForestClassifier
+          from sklearn.preprocessing import StandardScaler
+          import os
+
+          os.makedirs('models', exist_ok=True)
+
+          # Train a tiny dummy model
+          X = np.random.rand(100, 41)
+          y = np.random.randint(0, 2, 100)
+          model = RandomForestClassifier(n_estimators=2, random_state=42)
+          model.fit(X, y)
+          joblib.dump(model, 'models/best_model.pkl')
+
+          scaler = StandardScaler()
+          scaler.fit(X)
+          joblib.dump(scaler, 'models/scaler.pkl')
+          print("✅ Dummy models created")
+          EOF
+
       - name: Run tests
         run: pytest tests/ -v
 
@@ -29,12 +53,54 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Create dummy model files for Docker test
+        run: |
+          pip install scikit-learn joblib numpy
+          python3 - <<'EOF'
+          import joblib
+          import numpy as np
+          from sklearn.ensemble import RandomForestClassifier
+          from sklearn.preprocessing import StandardScaler
+          import os
+
+          os.makedirs('models', exist_ok=True)
+
+          X = np.random.rand(100, 41)
+          y = np.random.randint(0, 2, 100)
+          model = RandomForestClassifier(n_estimators=2, random_state=42)
+          model.fit(X, y)
+          joblib.dump(model, 'models/best_model.pkl')
+
+          scaler = StandardScaler()
+          scaler.fit(X)
+          joblib.dump(scaler, 'models/scaler.pkl')
+          print("✅ Dummy models created")
+          EOF
+
       - name: Build Docker image
         run: docker build -t ids-mlops-api .
 
       - name: Run container test
         run: |
-          docker run -d -p 8000:8000 --name test-api ids-mlops-api
-          sleep 5
-          curl http://localhost:8000/health
+          docker run -d -p 8000:8000 \
+            -v $(pwd)/models:/app/models \
+            --name test-api ids-mlops-api
+          
+          # ✅ Wait up to 30 seconds for API to be ready
+          echo "Waiting for API to start..."
+          for i in {1..15}; do
+            if curl -s http://localhost:8000/health; then
+              echo "✅ API is up!"
+              break
+            fi
+            echo "Attempt $i/15 - waiting..."
+            sleep 2
+          done
+          
+          curl -f http://localhost:8000/health
           docker stop test-api
