@@ -1,11 +1,23 @@
 from fastapi.testclient import TestClient
 import sys
 import os
+import joblib
+import numpy as np
+from unittest.mock import patch, MagicMock
 
-# ✅ Tell Python where to find the api folder
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from api.main import app  # ✅ correct path
+# ✅ Mock the model and scaler so tests work without real .pkl files
+mock_model = MagicMock()
+mock_model.predict.return_value = np.array([0])
+mock_model.predict_proba.return_value = np.array([[0.9, 0.1]])
+mock_model.__class__.__name__ = "RandomForestClassifier"
+
+mock_scaler = MagicMock()
+mock_scaler.transform.return_value = np.zeros((1, 41))
+
+with patch('joblib.load', side_effect=[mock_model, mock_scaler]):
+    from api.main import app
 
 client = TestClient(app)
 
