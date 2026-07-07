@@ -25,6 +25,7 @@ services:
       - "9090:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus  # ✅ persist data
 
   grafana:
     image: grafana/grafana
@@ -32,3 +33,10 @@ services:
       - "3000:3000"
     depends_on:
       - prometheus
+    volumes:
+      - grafana_data:/var/lib/grafana  
+
+# ✅ Define named volumes
+volumes:
+  prometheus_data:
+  grafana_data:
