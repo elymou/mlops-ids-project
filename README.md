@@ -1,93 +1,234 @@
-# MLOps IDS Project
-
-End-to-end MLOps pipeline for a network intrusion detection system, built for the Machine Learning module (CI2 - Cybersecurity, Semester 4, 2025-2026).
-
-The idea is pretty simple: train a model that can tell if network traffic is normal or an attack, then wrap the whole thing with the tooling you'd actually need in a real environment - experiment tracking, an API to serve predictions, containers, CI/CD, and monitoring.
-
-## Dataset
-
-NSL-KDD (`KDDTrain+` / `KDDTest+`). It's the classic benchmark for this kind of thing - 41 features per connection (protocol, service, byte counts, error rates, etc.) plus a label saying whether it's normal traffic or a specific attack type.
-
-Not included in the repo directly due to size - download from https://www.unb.ca/cic/datasets/nsl.html and drop the files in `data/raw/`.
-
-## What's in here
-
+# Pipeline MLOps pour la Cybersécurité — Système de Détection d'Intrusions (IDS)
+ 
+Pipeline MLOps de bout en bout qui entraîne, déploie, surveille et suit un modèle de machine learning pour la détection d'intrusions réseau, réalisé dans le cadre du **Projet de fin de Module — Machine Learning (CI2, Cybersécurité, 2025-2026)**.
+ 
+---
+ 
+## Vue d'ensemble
+ 
+Les systèmes de détection d'intrusions (IDS) traditionnels, basés sur des signatures statiques, montrent des limites face aux attaques zero-day et aux comportements anormaux évolués. Ce projet propose un **IDS basé sur le Machine Learning**, intégré dans un pipeline MLOps complet — couvrant l'ensemble du cycle de vie, depuis les données brutes jusqu'à une API de production surveillée.
+ 
+**Fonctionnalités du pipeline :**
+1. Prétraitement des données de trafic réseau brutes (NSL-KDD)
+2. Entraînement et comparaison de modèles ML supervisés (Random Forest, XGBoost, SVM)
+3. Traçabilité des expériences et gestion des versions de modèles avec **MLflow**
+4. Prédictions en temps réel via une API REST **FastAPI**
+5. Containerisation de tous les services avec **Docker** / **docker-compose**
+6. Automatisation des tests et du déploiement avec **GitHub Actions (CI/CD)**
+7. Surveillance des performances de l'API en temps réel avec **Prometheus** et **Grafana**
+8. Détection de dérive des données entre les données d'entraînement et de production avec **Evidently AI**
+---
+ 
+## Architecture
+ 
+```
+                ┌─────────────────────┐
+                │  Données réseau      │
+                │  brutes (NSL-KDD)    │
+                └──────────┬───────────┘
+                           │
+                           ▼
+                ┌─────────────────────┐
+                │ Prétraitement des     │
+                │ données (encodage,    │
+                │ mise à l'échelle)     │
+                └──────────┬───────────┘
+                           │
+                           ▼
+                ┌─────────────────────┐
+                │  Entraînement du      │
+                │  modèle (RF, XGBoost, │
+                │  SVM) + suivi MLflow  │
+                └──────────┬───────────┘
+                           │
+                           ▼
+                ┌─────────────────────┐
+                │  Meilleur modèle      │
+                │  sauvegardé            │
+                │  (best_model.pkl)     │
+                └──────────┬───────────┘
+                           │
+                           ▼
+        ┌──────────────────────────────────┐
+        │            API REST FastAPI       │
+        │   /predict  /health  /model-info  │
+        │   expose les métriques Prometheus │
+        └───────┬───────────────┬──────────┘
+                │               │
+                ▼               ▼
+      ┌──────────────┐   ┌──────────────────┐
+      │  Prometheus   │──▶│      Grafana      │
+      │ (scrute l'API)│   │ (tableaux de bord │
+      │               │   │  en temps réel)   │
+      └──────────────┘   └──────────────────┘
+ 
+      ┌───────────────────────────────────┐
+      │           Evidently AI              │
+      │  Compare les données d'entraîne-    │
+      │  ment et de test                    │
+      │  → rapport de dérive (HTML)         │
+      └───────────────────────────────────┘
+ 
+        Tous les services sont orchestrés
+           ensemble via docker-compose.yml
+```
+ 
+**Services :**
+| Service | Rôle |
+|---|---|
+| `api` | Sert les prédictions d'intrusion via FastAPI |
+| `mlflow` | Trace les expériences, métriques et versions de modèles |
+| `prometheus` | Scrute les métriques en direct de l'API |
+| `grafana` | Visualise les métriques sur des tableaux de bord en temps réel |
+| `evidently` (script) | Génère un rapport de dérive des données entre les jeux d'entraînement et de test |
+ 
+---
+ 
+## Structure du Projet
+ 
 ```
 mlops-ids-project/
-├── data/raw/              KDDTrain+ and KDDTest+ go here
+│
+├── data/
+│   └── raw/
+│       ├── KDDTrain_.txt
+│       └── KDDTest_.txt
+│
+├── notebooks/
+│   └── exploration.ipynb
+│
 ├── src/
 │   ├── data_preprocessing.py
-│   └── train.py
+│   ├── train.py
+│   └── evaluate.py
+│
 ├── api/
-│   └── main.py            FastAPI app, serves predictions
+│   └── main.py                  # Application FastAPI (/predict, /health, /model-info)
+│
+├── models/
+│   ├── best_model.pkl            # Classifieur XGBoost entraîné
+│   ├── scaler.pkl                 # StandardScaler ajusté (41 caractéristiques)
+│   └── encoders.pkl               # LabelEncoders ajustés (protocol_type, service, flag)
+│
+├── tests/
+│   └── test_api.py
+│
 ├── monitoring/
 │   ├── prometheus.yml
 │   ├── grafana/
-│   └── evidently_report.py
-├── tests/
-├── .github/workflows/
+│   └── evidently_report.py       # Analyse de dérive des données
+│
+├── .github/
+│   └── workflows/
+│       └── ci-cd.yml
+│
 ├── Dockerfile
 ├── docker-compose.yml
-└── requirements.txt
+├── requirements.txt
+└── README.md
 ```
-
-## Models
-
-Trained and compared Random Forest, XGBoost, and SVM on the preprocessed dataset. XGBoost came out on top and is what's saved as `best_model.pkl`. All the runs (params, metrics) are logged in MLflow under the `IDS-Cybersecurity` experiment.
-
-`scaler.pkl` and `encoders.pkl` are needed alongside the model - they hold the fitted preprocessing (StandardScaler + label encoders for `protocol_type`, `service`, `flag`) so incoming requests get transformed the same way the training data was.
-
-## Running it
-
+ 
+---
+ 
+## Jeu de Données
+ 
+**NSL-KDD**, un jeu de données de référence standard pour la recherche en détection d'intrusions réseau.
+ 
+- Source : https://github.com/jmnwong
+- Fichiers : `KDDTrain_.txt` (125 973 lignes), `KDDTest_.txt` (22 544 lignes)
+- Placer les deux fichiers dans `data/raw/`
+---
+ 
+## Prérequis
+ 
+```txt
+pandas
+numpy
+scikit-learn
+xgboost
+mlflow
+fastapi
+uvicorn
+prometheus-fastapi-instrumentator
+evidently
+pytest
+requests
+joblib
+```
+ 
+Installation :
 ```bash
-# preprocess
+pip install -r requirements.txt
+```
+ 
+---
+ 
+## Démarrage
+ 
+```bash
+# 1. Cloner le dépôt
+git clone https://github.com/elymou/mlops-ids-project.git
+cd mlops-ids-project
+ 
+# 2. Créer et activer un environnement virtuel
+python3 -m venv venv
+source venv/bin/activate        # Linux / macOS
+# venv\Scripts\activate         # Windows
+ 
+# 3. Installer les dépendances
+pip install -r requirements.txt
+ 
+# 4. Prétraiter les données
 python src/data_preprocessing.py
-
-# train + log to mlflow
+ 
+# 5. Entraîner les modèles
 python src/train.py
-
-# spin up everything (api, mlflow, prometheus, grafana)
+ 
+# 6. Lancer tous les services
 docker compose up --build
 ```
-
-Once it's up:
-- API: `localhost:8000` (docs at `/docs`)
-- MLflow: `localhost:5000`
-- Prometheus: `localhost:9090`
-- Grafana: `localhost:3000`
-
-## Calling the API
-
-The `/predict` endpoint expects a single `features` array with 41 numbers (already encoded/scaled), not named fields:
-
+ 
+> Désactiver l'environnement virtuel à tout moment avec `deactivate`. Le dossier `venv/` doit être exclu du dépôt Git via `.gitignore`.
+ 
+Une fois lancés :
+| Service | URL |
+|---|---|
+| API | http://localhost:8000 |
+| Documentation API (Swagger) | http://localhost:8000/docs |
+| Interface MLflow | http://localhost:5000 |
+| Prometheus | http://localhost:9090 |
+| Grafana | http://localhost:3000 |
+ 
+---
+ 
+## Utilisation de l'API
+ 
+L'endpoint `/predict` attend un unique champ `features` — un tableau de 41 valeurs numériques prétraitées (encodées et mises à l'échelle) :
+ 
 ```bash
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
-  -d '{"features": [0.1, 0.0, 0.87, ...]}'
+  -d '{"features": [0.12, 0.0, 0.87, ... , 0.03]}'
 ```
-
-Check `/openapi.json` if you're not sure about the exact schema, or just POST an empty body and read the validation error - FastAPI tells you what it expects.
-
-## Monitoring
-
-Two layers here:
-
-- **Prometheus + Grafana** - operational metrics (request counts, latency, how many predictions were "normal" vs "attack"). Dashboard is in `monitoring/grafana/`.
-- **Evidently AI** - data drift between train and test sets. Run `monitoring/evidently_report.py` to regenerate the HTML report. Currently shows drift on 17/41 features, mostly the error-rate columns (`serror_rate`, `rerror_rate`, etc.) - makes sense given how NSL-KDD's splits were built.
-
-## Known limitations
-
-This is a prediction service, not a live network sensor - it doesn't capture packets off an interface. It reacts to whatever sends it a `features` request. Plugging in something like Zeek or Suricata to extract features from real traffic and call the API automatically would be the next step for an actual production setup, but that's outside the scope of this project.
-
-## Tests
-
-```bash
-pytest tests/
-```
-
-## Tech stack
-
-Python, scikit-learn, XGBoost, FastAPI, MLflow, Docker, GitHub Actions, Prometheus, Grafana, Evidently AI.
-
+ 
+`/model-info` et `/health` permettent de vérifier le statut ; la documentation interactive du schéma se trouve sur `/docs`.
+ 
 ---
-Project for Institut Supérieur de Management, d'Administration et de Génie Informatique - Cybersecurity track, 2025-2026.
+ 
+## Surveillance (Monitoring)
+ 
+- **Prometheus** collecte le nombre de requêtes, la latence, et des compteurs personnalisés (`ids_normal_traffic_total`, `ids_attacks_detected_total`) depuis l'endpoint `/metrics` de l'API.
+- **Grafana** affiche des tableaux de bord visualisant le nombre total de requêtes, le taux de requêtes, le trafic normal et les attaques détectées en temps réel.
+- **Evidently AI** (`monitoring/evidently_report.py`) compare les jeux de données d'entraînement et de test et génère un rapport de dérive au format HTML :
+```bash
+cd monitoring
+python3 evidently_report.py
+```
+ 
+Cela produit `evidently_report.html`, qui identifie les caractéristiques ayant dérivé entre la distribution de référence (entraînement) et la distribution actuelle (test), à l'aide du test de distance de Wasserstein.
+ 
+---
+ 
+## Portée et Limites
+ 
+Ce projet met en œuvre une **API de prédiction et un cycle de vie MLOps** autour d'un modèle IDS entraîné — il n'effectue pas de capture de paquets réseau en temps réel. L'API renvoie une prédiction pour tout tableau `features` qu'elle reçoit ; la connexion à un outil de capture de paquets en temps réel (par exemple Zeek ou Suricata) permettant d'extraire automatiquement les caractéristiques du trafic en direct dépasse le cadre de ce projet, mais constituerait la suite logique pour un déploiement en production.
